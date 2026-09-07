@@ -1,0 +1,40 @@
+{
+  "name": "@huzhihui_c/mcp-ssh",
+  "version": "1.0.0",
+  "description": "An MCP server for executing commands over SSH.",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "mcp-ssh": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"import('node:fs').then(({rmSync}) => rmSync('dist', { recursive: true, force: true }))\"",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "pnpm build",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "ssh2": "^1.16.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/ssh2": "^1.15.5",
+    "tsx": "^4.19.4"
+  }
+}
