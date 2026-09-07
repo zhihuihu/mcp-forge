@@ -11,6 +11,7 @@
 ## 当前 MCP
 
 - [`@huzhihui_c/mcp-ssh`](./packages/mcp-ssh)：通过 SSH 在远程主机上执行命令。
+- [`@huzhihui_c/mcp-mysql`](./packages/mcp-mysql)：按 `readonly`、`write`、`admin` 三档模式访问 MySQL。
 
 ## 开发
 
@@ -27,9 +28,22 @@ pnpm build
 pnpm --filter @huzhihui_c/mcp-ssh dev
 ```
 
+只运行 MySQL MCP：
+
+```bash
+pnpm --filter @huzhihui_c/mcp-mysql dev -- --mode=readonly
+```
+
 发布单个 MCP：
 
 ```bash
 pnpm --filter @huzhihui_c/mcp-ssh build
 pnpm --filter @huzhihui_c/mcp-ssh publish --access public
+```
+
+发布 MySQL MCP：
+
+```bash
+pnpm --filter @huzhihui_c/mcp-mysql build
+pnpm --filter @huzhihui_c/mcp-mysql publish --access public
 ```

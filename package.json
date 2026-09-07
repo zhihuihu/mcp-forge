@@ -11,6 +11,8 @@
     "build": "pnpm -r --if-present build",
     "clean": "pnpm -r --if-present clean",
     "dev": "pnpm --filter @huzhihui_c/mcp-ssh dev",
+    "dev:mysql": "pnpm --filter @huzhihui_c/mcp-mysql dev",
+    "dev:ssh": "pnpm --filter @huzhihui_c/mcp-ssh dev",
     "format": "prettier --write .",
     "lint": "pnpm -r --if-present lint",
     "test": "pnpm -r --if-present test",
