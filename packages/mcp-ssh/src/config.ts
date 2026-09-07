@@ -1,4 +1,8 @@
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+export type SshHostKeyPolicy = 'strict' | 'known_hosts' | 'disabled';
 
 export interface SshToolInput {
   host?: string;
@@ -8,6 +12,8 @@ export interface SshToolInput {
   privateKey?: string;
   passphrase?: string;
   hostFingerprint?: string;
+  hostKeyPolicy?: SshHostKeyPolicy;
+  knownHostsPath?: string;
   command?: string;
   cwd?: string;
   timeoutMs?: number;
@@ -21,7 +27,9 @@ export interface SshConnectionOptions {
   password?: string;
   privateKey?: string;
   passphrase?: string;
-  hostFingerprint: string;
+  hostFingerprint?: string;
+  hostKeyPolicy: SshHostKeyPolicy;
+  knownHostsPath?: string;
   agent?: string;
   readyTimeout: number;
 }
@@ -35,6 +43,20 @@ export class SshConfigurationError extends Error {
 
 function optionalNonEmpty(value: string | undefined): string | undefined {
   return value && value.trim().length > 0 ? value : undefined;
+}
+
+function parseHostKeyPolicy(value: string | undefined, source: string): SshHostKeyPolicy {
+  const normalized = optionalNonEmpty(value)?.toLowerCase() ?? 'disabled';
+  if (normalized === 'strict' || normalized === 'known_hosts' || normalized === 'disabled') {
+    return normalized;
+  }
+  throw new SshConfigurationError(
+    `${source} must be strict, known_hosts, or disabled; received: ${value}`,
+  );
+}
+
+function defaultKnownHostsPath(): string {
+  return join(homedir(), '.ssh', 'known_hosts');
 }
 
 function readPrivateKeyFromEnvironment(): string | undefined {
@@ -72,6 +94,14 @@ export function resolveConnectionOptions(input: SshToolInput): SshConnectionOpti
   const hostFingerprint =
     optionalNonEmpty(input.hostFingerprint) ??
     optionalNonEmpty(process.env.MCP_SSH_HOST_FINGERPRINT);
+  const hostKeyPolicy = parseHostKeyPolicy(
+    input.hostKeyPolicy ?? process.env.MCP_SSH_HOST_KEY_POLICY,
+    'MCP_SSH_HOST_KEY_POLICY',
+  );
+  const knownHostsPath =
+    optionalNonEmpty(input.knownHostsPath) ??
+    optionalNonEmpty(process.env.MCP_SSH_KNOWN_HOSTS_PATH) ??
+    defaultKnownHostsPath();
   const agent =
     optionalNonEmpty(process.env.MCP_SSH_AUTH_SOCK) ?? optionalNonEmpty(process.env.SSH_AUTH_SOCK);
 
@@ -87,7 +117,7 @@ export function resolveConnectionOptions(input: SshToolInput): SshConnectionOpti
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 120_000) {
     throw new SshConfigurationError('timeoutMs must be an integer between 1000 and 120000.');
   }
-  if (!hostFingerprint) {
+  if (hostKeyPolicy === 'strict' && !hostFingerprint) {
     throw new SshConfigurationError(
       'Missing SSH host fingerprint. Pass hostFingerprint or set MCP_SSH_HOST_FINGERPRINT.',
     );
@@ -105,7 +135,9 @@ export function resolveConnectionOptions(input: SshToolInput): SshConnectionOpti
     ...(password ? { password } : {}),
     ...(privateKey ? { privateKey } : {}),
     ...(passphrase ? { passphrase } : {}),
-    hostFingerprint,
+    ...(hostFingerprint ? { hostFingerprint } : {}),
+    hostKeyPolicy,
+    ...(hostKeyPolicy === 'known_hosts' ? { knownHostsPath } : {}),
     ...(agent ? { agent } : {}),
     readyTimeout: timeoutMs,
   };

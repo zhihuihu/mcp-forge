@@ -17,6 +17,19 @@ const sshConnectionSchema = {
     .min(1)
     .optional()
     .describe('Expected OpenSSH SHA256 host fingerprint; falls back to MCP_SSH_HOST_FINGERPRINT.'),
+  hostKeyPolicy: z
+    .enum(['strict', 'known_hosts', 'disabled'])
+    .optional()
+    .describe(
+      'Host key verification policy: strict, known_hosts, or disabled (default). Falls back to MCP_SSH_HOST_KEY_POLICY.',
+    ),
+  knownHostsPath: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      'SSH known_hosts file path for known_hosts policy; defaults to ~/.ssh/known_hosts or MCP_SSH_KNOWN_HOSTS_PATH.',
+    ),
 };
 
 function errorMessage(error: unknown): string {

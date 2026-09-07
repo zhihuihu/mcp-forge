@@ -14,6 +14,8 @@ afterEach(() => {
 
 beforeEach(() => {
   process.env.MCP_SSH_HOST_FINGERPRINT = 'SHA256:test';
+  delete process.env.MCP_SSH_HOST_KEY_POLICY;
+  delete process.env.MCP_SSH_KNOWN_HOSTS_PATH;
 });
 
 describe('resolveConnectionOptions', () => {
@@ -33,6 +35,7 @@ describe('resolveConnectionOptions', () => {
       username: 'call-user',
       password: 'call-password',
       port: 22,
+      hostKeyPolicy: 'disabled',
     });
   });
 
@@ -42,6 +45,62 @@ describe('resolveConnectionOptions', () => {
     expect(() => resolveConnectionOptions({ host: 'example.com', username: 'user' })).toThrow(
       'Missing SSH authentication',
     );
+  });
+
+  it('allows host key verification to be disabled per call', () => {
+    delete process.env.MCP_SSH_HOST_FINGERPRINT;
+
+    expect(
+      resolveConnectionOptions({
+        host: 'example.com',
+        username: 'user',
+        password: 'password',
+        hostKeyPolicy: 'disabled',
+      }),
+    ).toMatchObject({
+      hostKeyPolicy: 'disabled',
+    });
+  });
+
+  it('supports known_hosts verification without a fingerprint', () => {
+    delete process.env.MCP_SSH_HOST_FINGERPRINT;
+    process.env.MCP_SSH_HOST_KEY_POLICY = 'known_hosts';
+    process.env.MCP_SSH_KNOWN_HOSTS_PATH = 'C:/Users/test/.ssh/known_hosts';
+
+    expect(
+      resolveConnectionOptions({
+        host: 'example.com',
+        username: 'user',
+        password: 'password',
+      }),
+    ).toMatchObject({
+      hostKeyPolicy: 'known_hosts',
+      knownHostsPath: 'C:/Users/test/.ssh/known_hosts',
+    });
+  });
+
+  it('requires a fingerprint when strict policy is explicitly selected', () => {
+    delete process.env.MCP_SSH_HOST_FINGERPRINT;
+
+    expect(() =>
+      resolveConnectionOptions({
+        host: 'example.com',
+        username: 'user',
+        password: 'password',
+        hostKeyPolicy: 'strict',
+      }),
+    ).toThrow('Missing SSH host fingerprint');
+  });
+
+  it('rejects an unknown host key policy', () => {
+    expect(() =>
+      resolveConnectionOptions({
+        host: 'example.com',
+        username: 'user',
+        password: 'password',
+        hostKeyPolicy: 'unknown' as never,
+      }),
+    ).toThrow('must be strict, known_hosts, or disabled');
   });
 });
 
