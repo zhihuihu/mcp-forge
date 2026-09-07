@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 import { Client, type ClientChannel, type ConnectConfig } from 'ssh2';
 
@@ -44,15 +45,153 @@ function normalizedFingerprint(value: string): string {
   return trimmed.startsWith('SHA256:') ? trimmed : `SHA256:${trimmed}`;
 }
 
+interface KnownHostsEntry {
+  marker?: string;
+  patterns: string[];
+  keyBase64: string;
+}
+
+function parseKnownHosts(content: string): KnownHostsEntry[] {
+  const entries: KnownHostsEntry[] = [];
+
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    const fields = trimmed.split(/\s+/);
+    const marker = fields[0]?.startsWith('@') ? fields.shift() : undefined;
+    if (fields.length < 3 || !fields[0] || !fields[2]) {
+      continue;
+    }
+
+    entries.push({
+      ...(marker ? { marker } : {}),
+      patterns: fields[0].split(','),
+      keyBase64: fields[2],
+    });
+  }
+
+  return entries;
+}
+
+function wildcardMatches(pattern: string, value: string): boolean {
+  let expression = '^';
+  for (const character of pattern) {
+    if (character === '*') {
+      expression += '.*';
+    } else if (character === '?') {
+      expression += '.';
+    } else {
+      expression += character.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+  }
+  expression += '$';
+  return new RegExp(expression, 'i').test(value);
+}
+
+function hashedHostMatches(pattern: string, target: string): boolean {
+  const parts = pattern.split('|');
+  const version = parts[1];
+  const saltBase64 = parts[2];
+  const hashBase64 = parts[3];
+  if (parts.length !== 4 || version !== '1' || !saltBase64 || !hashBase64) {
+    return false;
+  }
+
+  try {
+    const salt = Buffer.from(saltBase64, 'base64');
+    const expected = Buffer.from(hashBase64, 'base64');
+    const actual = createHmac('sha1', salt).update(target).digest();
+    return actual.equals(expected);
+  } catch {
+    return false;
+  }
+}
+
+function knownHostTargets(host: string, port: number): string[] {
+  if (port !== 22) {
+    return [`[${host}]:${port}`];
+  }
+  return host.includes(':') ? [host, `[${host}]`] : [host];
+}
+
+function hostPatternMatches(pattern: string, targets: readonly string[]): boolean {
+  const negated = pattern.startsWith('!');
+  const candidate = negated ? pattern.slice(1) : pattern;
+  const matches = targets.some((target) =>
+    candidate.startsWith('|1|')
+      ? hashedHostMatches(candidate, target)
+      : wildcardMatches(candidate, target),
+  );
+  return negated ? !matches : matches;
+}
+
+function entryMatchesHost(entry: KnownHostsEntry, targets: readonly string[]): boolean {
+  const positivePatterns = entry.patterns.filter((pattern) => !pattern.startsWith('!'));
+  const negativePatterns = entry.patterns.filter((pattern) => pattern.startsWith('!'));
+
+  if (negativePatterns.some((pattern) => !hostPatternMatches(pattern, targets))) {
+    return false;
+  }
+
+  return positivePatterns.some((pattern) => hostPatternMatches(pattern, targets));
+}
+
+export function matchesKnownHosts(
+  content: string,
+  host: string,
+  port: number,
+  key: Buffer,
+): boolean {
+  const expectedKey = key.toString('base64');
+  const targets = knownHostTargets(host, port);
+
+  for (const entry of parseKnownHosts(content)) {
+    if (!entryMatchesHost(entry, targets)) {
+      continue;
+    }
+    if (entry.marker === '@cert-authority') {
+      continue;
+    }
+    if (entry.marker === '@revoked' && entry.keyBase64 === expectedKey) {
+      return false;
+    }
+    if (entry.keyBase64 === expectedKey) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function knownHostsVerifier(host: string, port: number, path: string): (key: Buffer) => boolean {
+  let content: string;
+  try {
+    content = readFileSync(path, 'utf8');
+  } catch {
+    throw new SshExecutionError(`Unable to read SSH known_hosts file: ${path}`);
+  }
+
+  return (key: Buffer): boolean => matchesKnownHosts(content, host, port, key);
+}
+
 function connectConfig(connection: SshConnectionOptions, timeoutMs: number): ConnectConfig {
-  const { hostFingerprint, ...sshConnection } = connection;
-  const expectedFingerprint = normalizedFingerprint(hostFingerprint);
+  const { hostFingerprint, hostKeyPolicy, knownHostsPath, ...sshConnection } = connection;
+  const verifier =
+    hostKeyPolicy === 'strict'
+      ? (key: Buffer): boolean =>
+          Boolean(hostFingerprint) &&
+          fingerprintForHostKey(key) === normalizedFingerprint(hostFingerprint ?? '')
+      : hostKeyPolicy === 'known_hosts'
+        ? knownHostsVerifier(connection.host, connection.port, knownHostsPath ?? '')
+        : undefined;
 
   return {
     ...sshConnection,
     readyTimeout: timeoutMs,
-    hostVerifier: (key: Buffer): boolean =>
-      fingerprintForHostKey(key) === expectedFingerprint,
+    ...(verifier ? { hostVerifier: verifier } : {}),
   };
 }
 
