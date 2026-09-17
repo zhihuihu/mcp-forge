@@ -158,3 +158,37 @@ export function resolveExecutionLimits(input: SshToolInput): {
 
   return { timeoutMs, maxOutputBytes };
 }
+
+export interface CliOptions {
+  help: boolean;
+}
+
+export function parseCliOptions(args: readonly string[] = process.argv.slice(2)): CliOptions {
+  let help = false;
+  for (const argument of args) {
+    if (argument === '--help' || argument === '-h') {
+      help = true;
+      continue;
+    }
+    throw new SshConfigurationError(`Unknown command-line option: ${argument}`);
+  }
+  return { help };
+}
+
+export const helpText = `Usage: mcp-ssh [--help|-h]
+
+An MCP server for executing commands over SSH using stdio transport.
+
+Environment variables:
+  MCP_SSH_HOST                Default SSH host
+  MCP_SSH_PORT                Default SSH port (default: 22)
+  MCP_SSH_USERNAME            Default SSH username
+  MCP_SSH_PASSWORD            Default SSH password
+  MCP_SSH_PRIVATE_KEY         Default SSH private key
+  MCP_SSH_PRIVATE_KEY_PATH    Path to private key file
+  MCP_SSH_PASSPHRASE          Passphrase for private key
+  MCP_SSH_HOST_KEY_POLICY     Host key policy: strict, known_hosts, or disabled (default: disabled)
+  MCP_SSH_HOST_FINGERPRINT    Expected host key fingerprint (required for strict policy)
+  MCP_SSH_KNOWN_HOSTS_PATH    Path to known_hosts file (for known_hosts policy)
+  MCP_SSH_TIMEOUT_MS          SSH connection and command execution timeout in ms (default: 30000)
+`;

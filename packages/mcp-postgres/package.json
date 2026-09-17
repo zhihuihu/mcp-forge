@@ -1,26 +1,26 @@
 {
-  "name": "@huzhihui_c/mcp-mysql",
-  "version": "1.0.2",
-  "description": "An AWS-style MCP server for MySQL query and schema operations.",
+  "name": "@huzhihui_c/mcp-postgres",
+  "version": "1.0.0",
+  "description": "An AWS-style MCP server for PostgreSQL query and schema operations.",
   "license": "MIT",
   "author": "huzhihui_c",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zhihuihu/mcp-forge.git",
-    "directory": "packages/mcp-mysql"
+    "directory": "packages/mcp-postgres"
   },
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "mysql",
-    "mariadb",
+    "postgres",
+    "postgresql",
     "database"
   ],
   "type": "module",
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "mcp-mysql": "dist/index.js"
+    "mcp-postgres": "dist/index.js"
   },
   "files": [
     "dist",
@@ -44,10 +44,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
-    "mysql2": "^3.14.1",
+    "pg": "^8.13.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@types/pg": "^8.11.11",
     "tsx": "^4.19.4"
   }
 }

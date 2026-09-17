@@ -68,7 +68,7 @@ function parseBoolean(name: string, value: string | undefined, fallback: boolean
   throw new MysqlConfigurationError(`${name} must be true or false; received: ${value}`);
 }
 
-function readPassword(): string {
+function readPassword(urlPassword?: string): string {
   const directPassword = process.env.MYSQL_PASSWORD;
   if (directPassword !== undefined) {
     return directPassword;
@@ -76,7 +76,7 @@ function readPassword(): string {
 
   const passwordFile = nonEmpty(process.env.MYSQL_PASSWORD_FILE);
   if (!passwordFile) {
-    return '';
+    return urlPassword ?? '';
   }
 
   try {
@@ -152,18 +152,81 @@ export function parseCliOptions(args: readonly string[] = process.argv.slice(2))
   return { help, ...(mode ? { mode } : {}) };
 }
 
+interface ParsedUrlConfig {
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  database?: string;
+  ssl?: boolean;
+}
+
+function parseUrlConfig(rawUrl: string): ParsedUrlConfig {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new MysqlConfigurationError(`Invalid database connection URL: ${rawUrl}`);
+  }
+
+  const username = parsed.username ? decodeURIComponent(parsed.username) : undefined;
+  const password = parsed.password ? decodeURIComponent(parsed.password) : undefined;
+  const host = parsed.hostname ? parsed.hostname : undefined;
+  const port = parsed.port ? Number(parsed.port) : undefined;
+  if (port !== undefined && (!Number.isInteger(port) || port < 1 || port > 65_535)) {
+    throw new MysqlConfigurationError(`Invalid port in database connection URL: ${parsed.port}`);
+  }
+  const cleanPath = parsed.pathname ? parsed.pathname.replace(/^\//, '') : '';
+  const database = cleanPath ? decodeURIComponent(cleanPath) : undefined;
+
+  const sslParam = parsed.searchParams.get('ssl') ?? parsed.searchParams.get('sslmode');
+  let ssl: boolean | undefined;
+  if (sslParam) {
+    const s = sslParam.toLowerCase();
+    ssl =
+      s === 'true' ||
+      s === '1' ||
+      s === 'require' ||
+      s === 'required' ||
+      s === 'prefer' ||
+      s === 'verify-ca' ||
+      s === 'verify-full';
+  } else if (
+    rawUrl.includes('psdb.cloud') ||
+    rawUrl.includes('tidbcloud.com') ||
+    rawUrl.includes('aivencloud.com')
+  ) {
+    ssl = true;
+  }
+
+  return {
+    ...(username ? { username } : {}),
+    ...(password ? { password } : {}),
+    ...(host ? { host } : {}),
+    ...(port !== undefined ? { port } : {}),
+    ...(database ? { database } : {}),
+    ...(ssl !== undefined ? { ssl } : {}),
+  };
+}
+
 export function loadConfig(args: readonly string[] = process.argv.slice(2)): MysqlConfig {
   const cli = parseCliOptions(args);
   const mode = cli.mode ?? parseMode(process.env.MYSQL_MODE, 'MYSQL_MODE') ?? 'readonly';
-  const username = nonEmpty(process.env.MYSQL_USER);
+
+  const rawUrl = nonEmpty(process.env.MYSQL_URL ?? process.env.DATABASE_URL);
+  const urlConfig = rawUrl ? parseUrlConfig(rawUrl) : undefined;
+
+  const username = nonEmpty(process.env.MYSQL_USER) ?? urlConfig?.username;
 
   if (!username) {
-    throw new MysqlConfigurationError('MYSQL_USER is required.');
+    throw new MysqlConfigurationError(
+      'MYSQL_USER is required (or specify in MYSQL_URL / DATABASE_URL).',
+    );
   }
 
   const port = requireRange(
     'MYSQL_PORT',
-    parseInteger('MYSQL_PORT', process.env.MYSQL_PORT, 3306),
+    parseInteger('MYSQL_PORT', process.env.MYSQL_PORT, urlConfig?.port ?? 3306),
     1,
     65_535,
   );
@@ -197,9 +260,10 @@ export function loadConfig(args: readonly string[] = process.argv.slice(2)): Mys
     0,
     1_000_000,
   );
-  const host = nonEmpty(process.env.MYSQL_HOST) ?? '127.0.0.1';
-  const database = nonEmpty(process.env.MYSQL_DATABASE);
-  const ssl = parseBoolean('MYSQL_SSL', process.env.MYSQL_SSL, false);
+  const host = nonEmpty(process.env.MYSQL_HOST) ?? urlConfig?.host ?? '127.0.0.1';
+  const database = nonEmpty(process.env.MYSQL_DATABASE) ?? urlConfig?.database;
+  const password = readPassword(urlConfig?.password);
+  const ssl = parseBoolean('MYSQL_SSL', process.env.MYSQL_SSL, urlConfig?.ssl ?? false);
   const sslCa = ssl ? readSslCa() : undefined;
 
   return {
@@ -207,7 +271,7 @@ export function loadConfig(args: readonly string[] = process.argv.slice(2)): Mys
     host,
     port,
     username,
-    password: readPassword(),
+    password,
     ...(database ? { database } : {}),
     ssl,
     ...(sslCa ? { sslCa } : {}),

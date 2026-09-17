@@ -58,12 +58,13 @@ MCP 客户端配置示例：
 
 ## 环境变量
 
+- `MYSQL_URL` / `DATABASE_URL`：标准数据库连接串（例如 `mysql://user:pass@host:3306/db?ssl=true`），方便无缝集成各类云托管 MySQL / TiDB / PlanetScale。
 - `MYSQL_HOST`：MySQL 主机，默认为 `127.0.0.1`。
 - `MYSQL_PORT`：MySQL 端口，默认为 `3306`。
-- `MYSQL_USER`：必填，MySQL 用户名。
-- `MYSQL_PASSWORD`：密码；也可以使用 `MYSQL_PASSWORD_FILE`。
+- `MYSQL_USER`：MySQL 用户名（可由 `MYSQL_URL` 提供）。
+- `MYSQL_PASSWORD`：密码；也可以使用 `MYSQL_PASSWORD_FILE`（可由 `MYSQL_URL` 提供）。
 - `MYSQL_DATABASE`：默认数据库，可选。
-- `MYSQL_SSL`：是否启用 TLS，默认 `false`。
+- `MYSQL_SSL`：是否启用 TLS，默认 `false`（对常见云服务商域名如 `tidbcloud.com` 自动探测开启）。
 - `MYSQL_SSL_CA`：CA 文件路径；启用 TLS 时建议配置。
 - `MYSQL_MODE`：`readonly`、`write` 或 `admin`，默认 `readonly`。
 - `MYSQL_MAX_ROWS`：最大返回行数，默认为 `500`。

@@ -2,7 +2,8 @@
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
-import { parseCliOptions, helpText } from './config.js';
+import { parseCliOptions, helpText, loadConfig } from './config.js';
+import { PgClient } from './pg-client.js';
 import { createServer } from './server.js';
 
 async function main(): Promise<void> {
@@ -12,10 +13,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  const server = createServer();
+  const config = loadConfig();
+  const client = new PgClient(config);
+  const server = createServer(config, client);
   const transport = new StdioServerTransport();
 
-  const shutdown = (): void => {
+  const shutdown = async (): Promise<void> => {
+    await client.close().catch(() => undefined);
     process.exit(0);
   };
   process.once('SIGINT', shutdown);
@@ -28,6 +32,6 @@ try {
   await main();
 } catch (error) {
   const message = error instanceof Error ? error.message : 'Unknown startup error.';
-  process.stderr.write(`mcp-ssh startup failed: ${message}\n`);
+  process.stderr.write(`mcp-postgres startup failed: ${message}\n`);
   process.exitCode = 1;
 }
