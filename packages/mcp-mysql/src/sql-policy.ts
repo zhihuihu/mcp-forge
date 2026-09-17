@@ -128,6 +128,60 @@ function secondWord(values: readonly string[]): string | undefined {
   return values[1];
 }
 
+function hasLockingClause(tokenWords: readonly string[]): boolean {
+  for (let i = 0; i < tokenWords.length - 1; i++) {
+    if (tokenWords[i] === 'FOR' && (tokenWords[i + 1] === 'UPDATE' || tokenWords[i + 1] === 'SHARE')) {
+      return true;
+    }
+    if (
+      tokenWords[i] === 'LOCK' &&
+      tokenWords[i + 1] === 'IN' &&
+      i + 2 < tokenWords.length &&
+      tokenWords[i + 2] === 'SHARE'
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function findMainStatementKeywordInWith(tokens: readonly SqlToken[]): string | undefined {
+  let depth = 0;
+  let seenParenthesis = false;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (!token) {
+      continue;
+    }
+    if (token.value === '(') {
+      depth += 1;
+      seenParenthesis = true;
+      continue;
+    }
+    if (token.value === ')') {
+      depth -= 1;
+      continue;
+    }
+
+    if (depth === 0 && seenParenthesis && token.kind === 'word') {
+      const upper = token.value.toUpperCase();
+      if (upper === 'AS' || upper === 'RECURSIVE') {
+        continue;
+      }
+      if (tokens[i - 1]?.value === ',') {
+        // Next CTE alias name
+        continue;
+      }
+      if (['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'REPLACE'].includes(upper)) {
+        return upper;
+      }
+    }
+  }
+
+  return undefined;
+}
+
 function classify(tokens: readonly SqlToken[]): { kind: SqlStatementKind; firstKeyword: string } {
   const value = tokens.find((token) => token.kind === 'word')?.value.toUpperCase();
   if (!value) {
@@ -137,8 +191,24 @@ function classify(tokens: readonly SqlToken[]): { kind: SqlStatementKind; firstK
   const valueWords = words(tokens);
   const next = secondWord(valueWords);
 
-  if (containsAny(valueWords, ['INTO', 'OUTFILE', 'DUMPFILE', 'LOAD_FILE'])) {
+  // Administrative file import/export statements
+  if (containsAny(valueWords, ['OUTFILE', 'DUMPFILE', 'LOAD_FILE', 'LOAD'])) {
     return { kind: 'admin', firstKeyword: value };
+  }
+
+  // CTE (Common Table Expression) support: WITH ... AS (...) SELECT ...
+  if (value === 'WITH') {
+    const mainKeyword = findMainStatementKeywordInWith(tokens);
+    if (mainKeyword === 'SELECT') {
+      if (hasLockingClause(valueWords)) {
+        return { kind: 'transaction', firstKeyword: value };
+      }
+      return { kind: 'read', firstKeyword: value };
+    }
+    if (mainKeyword && ['INSERT', 'UPDATE', 'DELETE', 'REPLACE'].includes(mainKeyword)) {
+      return { kind: 'dml', firstKeyword: value };
+    }
+    return { kind: 'unknown', firstKeyword: value };
   }
 
   if (
@@ -148,7 +218,7 @@ function classify(tokens: readonly SqlToken[]): { kind: SqlStatementKind; firstK
     value === 'DESC' ||
     value === 'EXPLAIN'
   ) {
-    if (containsAny(valueWords, ['FOR', 'UPDATE']) && value === 'SELECT') {
+    if (value === 'SELECT' && hasLockingClause(valueWords)) {
       return { kind: 'transaction', firstKeyword: value };
     }
     return { kind: 'read', firstKeyword: value };
@@ -158,7 +228,12 @@ function classify(tokens: readonly SqlToken[]): { kind: SqlStatementKind; firstK
     return { kind: 'dml', firstKeyword: value };
   }
 
-  if (value === 'CREATE' || value === 'ALTER' || value === 'DROP') {
+  // DROP and TRUNCATE are destructive and strictly reserved for admin mode to protect against LLM hallucinations
+  if (value === 'DROP' || value === 'TRUNCATE') {
+    return { kind: 'admin', firstKeyword: value };
+  }
+
+  if (value === 'CREATE' || value === 'ALTER') {
     const administrativeObject = [
       'USER',
       'ROLE',
@@ -179,7 +254,7 @@ function classify(tokens: readonly SqlToken[]): { kind: SqlStatementKind; firstK
     };
   }
 
-  if (value === 'TRUNCATE' || value === 'RENAME') {
+  if (value === 'RENAME') {
     return { kind: 'ddl', firstKeyword: value };
   }
 

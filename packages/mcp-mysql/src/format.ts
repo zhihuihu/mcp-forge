@@ -52,15 +52,16 @@ export function formatResult(
   maxRows: number,
   maxResultBytes: number,
 ): string {
-  const allRows = result.rows.map((row) => normalizeValue(row));
-  let rows = allRows.slice(0, maxRows);
-  let truncated = rows.length < allRows.length;
+  const totalRowCount = result.rows.length;
+  const rowsToFormat = result.rows.slice(0, maxRows);
+  let rows = rowsToFormat.map((row) => normalizeValue(row));
+  let truncated = rows.length < totalRowCount;
 
   const basePayload = {
     schema_version: 1 as const,
     statementType,
     columns: result.fields,
-    rowCount: allRows.length,
+    rowCount: totalRowCount,
     ...(result.affectedRows !== undefined ? { affectedRows: result.affectedRows } : {}),
     ...(result.insertId !== undefined ? { insertId: normalizeValue(result.insertId) } : {}),
     ...(result.warningStatus !== undefined ? { warningStatus: result.warningStatus } : {}),
@@ -74,18 +75,42 @@ export function formatResult(
     truncated,
   };
   let serialized = serialize(payload);
-
-  while (Buffer.byteLength(serialized, 'utf8') > maxResultBytes && rows.length > 0) {
-    rows = rows.slice(0, -1);
-    truncated = true;
-    payload = {
-      ...basePayload,
-      rows,
-      returnedRows: rows.length,
-      truncated,
-    };
-    serialized = serialize(payload);
+  if (Buffer.byteLength(serialized, 'utf8') <= maxResultBytes) {
+    return serialized;
   }
 
-  return serialized;
+  // If payload exceeds maxResultBytes, perform binary search to find the maximum number of rows that fit
+  truncated = true;
+  let low = 0;
+  let high = rows.length - 1;
+
+  // Base fallback with 0 rows
+  const emptyPayload: ResultPayload = {
+    ...basePayload,
+    rows: [],
+    returnedRows: 0,
+    truncated: true,
+  };
+  let bestSerialized = serialize(emptyPayload);
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const candidateRows = rows.slice(0, mid + 1);
+    const candidatePayload: ResultPayload = {
+      ...basePayload,
+      rows: candidateRows,
+      returnedRows: candidateRows.length,
+      truncated: true,
+    };
+    const candidateSerialized = serialize(candidatePayload);
+
+    if (Buffer.byteLength(candidateSerialized, 'utf8') <= maxResultBytes) {
+      bestSerialized = candidateSerialized;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return bestSerialized;
 }

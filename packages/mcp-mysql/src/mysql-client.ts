@@ -1,5 +1,5 @@
-import { createPool, type Pool, type PoolConnection } from 'mysql2/promise';
-import type { FieldPacket, PoolOptions, ResultSetHeader } from 'mysql2';
+import { createConnection, type Connection } from 'mysql2/promise';
+import type { ConnectionOptions, FieldPacket, ResultSetHeader } from 'mysql2';
 
 import type { MysqlConfig, SqlStatementKind } from './types.js';
 
@@ -65,19 +65,19 @@ function resultFromQuery(result: unknown, fields: readonly FieldPacket[]): Mysql
 }
 
 export class MysqlClient {
-  private readonly pool: Pool;
+  private readonly connectionOptions: ConnectionOptions;
 
   constructor(private readonly config: MysqlConfig) {
-    const options: PoolOptions = {
+    this.connectionOptions = {
       host: config.host,
       port: config.port,
       user: config.username,
       password: config.password,
-      waitForConnections: true,
-      connectionLimit: 5,
-      queueLimit: 0,
       connectTimeout: config.connectTimeoutMs,
       multipleStatements: false,
+      supportBigNumbers: true,
+      bigNumberStrings: true,
+      dateStrings: true,
       ...(config.database ? { database: config.database } : {}),
       ...(config.ssl
         ? {
@@ -88,12 +88,10 @@ export class MysqlClient {
           }
         : {}),
     };
-
-    this.pool = createPool(options);
   }
 
   private async query(
-    connection: PoolConnection,
+    connection: Connection,
     statement: string,
     params: readonly unknown[],
   ): Promise<MysqlExecutionResult> {
@@ -113,8 +111,9 @@ export class MysqlClient {
     params: readonly unknown[],
     kind: SqlStatementKind,
   ): Promise<MysqlExecutionResult> {
-    const connection = await this.pool.getConnection();
+    const connection = await createConnection(this.connectionOptions);
     let transactionStarted = false;
+    let hasError = false;
 
     try {
       if (kind === 'read') {
@@ -148,16 +147,23 @@ export class MysqlClient {
       // implicitly commit, so wrapping them in an application transaction is misleading.
       return await this.query(connection, statement, params);
     } catch (error) {
+      hasError = true;
       if (transactionStarted) {
         await connection.rollback().catch(() => undefined);
       }
       throw error;
     } finally {
-      connection.release();
+      if (hasError) {
+        connection.destroy();
+      } else {
+        await connection.end().catch(() => {
+          connection.destroy();
+        });
+      }
     }
   }
 
   async close(): Promise<void> {
-    await this.pool.end();
+    // Connections are created and closed per query; no persistent pool to terminate.
   }
 }

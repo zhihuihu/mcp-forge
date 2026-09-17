@@ -41,10 +41,14 @@ function outputText(result: {
   stderr: string;
   exitCode: number;
   signal?: string;
+  truncated: boolean;
 }): string {
   const sections = [`Exit code: ${result.exitCode}`];
   if (result.signal) {
     sections.push(`Signal: ${result.signal}`);
+  }
+  if (result.truncated) {
+    sections.push('Note: Command output was truncated because it reached maxOutputBytes.');
   }
   sections.push(`STDOUT:\n${result.stdout || '(empty)'}`);
   sections.push(`STDERR:\n${result.stderr || '(empty)'}`);
@@ -67,6 +71,12 @@ export function createServer(): McpServer {
         ...sshConnectionSchema,
         command: z.string().min(1).describe('The shell command to execute remotely.'),
         cwd: z.string().min(1).optional().describe('Remote working directory.'),
+        stdin: z
+          .string()
+          .optional()
+          .describe(
+            'Standard input content to pass to the remote command (e.g. for piped inputs or interactive prompts).',
+          ),
         timeoutMs: z
           .number()
           .int()
@@ -82,6 +92,12 @@ export function createServer(): McpServer {
           .optional()
           .describe('Maximum combined stdout and stderr size; defaults to 1 MiB.'),
       },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     async (input) => {
       try {
@@ -93,6 +109,7 @@ export function createServer(): McpServer {
           command: args.command,
           ...limits,
           ...(args.cwd ? { cwd: args.cwd } : {}),
+          ...(args.stdin !== undefined ? { stdin: args.stdin } : {}),
         });
 
         return {
