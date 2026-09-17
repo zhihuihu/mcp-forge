@@ -1,7 +1,20 @@
 {
   "name": "@huzhihui_c/mcp-ssh",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "An MCP server for executing commands over SSH.",
+  "license": "MIT",
+  "author": "huzhihui_c",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhihuihu/mcp-forge.git",
+    "directory": "packages/mcp-ssh"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ssh",
+    "remote-execution"
+  ],
   "type": "module",
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",

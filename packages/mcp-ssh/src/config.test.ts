@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  parseCliOptions,
   resolveConnectionOptions,
   resolveExecutionLimits,
   SshConfigurationError,
@@ -114,5 +115,17 @@ describe('resolveExecutionLimits', () => {
 
   it('rejects an excessive output limit', () => {
     expect(() => resolveExecutionLimits({ maxOutputBytes: 10_485_761 })).toThrow('maxOutputBytes');
+  });
+});
+
+describe('parseCliOptions', () => {
+  it('detects --help and -h flags', () => {
+    expect(parseCliOptions([])).toEqual({ help: false });
+    expect(parseCliOptions(['--help'])).toEqual({ help: true });
+    expect(parseCliOptions(['-h'])).toEqual({ help: true });
+  });
+
+  it('rejects unknown CLI options', () => {
+    expect(() => parseCliOptions(['--unknown'])).toThrow(SshConfigurationError);
   });
 });

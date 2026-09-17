@@ -12,6 +12,7 @@
 
 - [`@huzhihui_c/mcp-ssh`](./packages/mcp-ssh)：通过 SSH 在远程主机上执行命令。
 - [`@huzhihui_c/mcp-mysql`](./packages/mcp-mysql)：按 `readonly`、`write`、`admin` 三档模式访问 MySQL。
+- [`@huzhihui_c/mcp-postgres`](./packages/mcp-postgres)：按 `readonly`、`write`、`admin` 三档模式访问 PostgreSQL。
 
 ## 开发
 
@@ -34,16 +35,21 @@ pnpm --filter @huzhihui_c/mcp-ssh dev
 pnpm --filter @huzhihui_c/mcp-mysql dev -- --mode=readonly
 ```
 
+只运行 PostgreSQL MCP：
+
+```bash
+pnpm --filter @huzhihui_c/mcp-postgres dev -- --mode=readonly
+```
+
 发布单个 MCP：
 
 ```bash
 pnpm --filter @huzhihui_c/mcp-ssh build
 pnpm --filter @huzhihui_c/mcp-ssh publish --access public
-```
 
-发布 MySQL MCP：
-
-```bash
 pnpm --filter @huzhihui_c/mcp-mysql build
 pnpm --filter @huzhihui_c/mcp-mysql publish --access public
+
+pnpm --filter @huzhihui_c/mcp-postgres build
+pnpm --filter @huzhihui_c/mcp-postgres publish --access public
 ```
