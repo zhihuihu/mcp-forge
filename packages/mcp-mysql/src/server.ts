@@ -157,14 +157,22 @@ export function createServer(config: MysqlConfig, client: MysqlClient): McpServe
       title: 'Describe a MySQL table',
       description: 'Return column definitions for a table.',
       inputSchema: {
-        database: z.string().min(1).describe('Database name.'),
+        database: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Database name; defaults to MYSQL_DATABASE.'),
         table: z.string().min(1).describe('Table name.'),
       },
       annotations: readAnnotations(),
     },
     async (input) => {
       try {
-        const args = input as { database: string; table: string };
+        const args = input as { database?: string; table: string };
+        const database = args.database ?? config.database;
+        if (!database) {
+          throw new Error('A database is required. Pass database or set MYSQL_DATABASE.');
+        }
         const result = await client.execute(
           `SELECT ORDINAL_POSITION AS ordinalPosition,
                   COLUMN_NAME AS columnName,
@@ -177,7 +185,7 @@ export function createServer(config: MysqlConfig, client: MysqlClient): McpServe
            FROM information_schema.COLUMNS
            WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
            ORDER BY ORDINAL_POSITION`,
-          [args.database, args.table],
+          [database, args.table],
           'read',
         );
         return success(formatResult(result, 'read', config.maxRows, config.maxResultBytes));

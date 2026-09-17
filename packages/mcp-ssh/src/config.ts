@@ -16,6 +16,7 @@ export interface SshToolInput {
   knownHostsPath?: string;
   command?: string;
   cwd?: string;
+  stdin?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
 }

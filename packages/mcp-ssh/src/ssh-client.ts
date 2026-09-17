@@ -9,6 +9,7 @@ export interface ExecuteOptions {
   connection: SshConnectionOptions;
   command: string;
   cwd?: string;
+  stdin?: string;
   timeoutMs: number;
   maxOutputBytes: number;
 }
@@ -18,6 +19,7 @@ export interface ExecuteResult {
   stderr: string;
   exitCode: number;
   signal?: string;
+  truncated: boolean;
 }
 
 export class SshExecutionError extends Error {
@@ -31,8 +33,11 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function commandWithWorkingDirectory(command: string, cwd: string | undefined): string {
-  return cwd ? `cd ${shellQuote(cwd)} && ${command}` : command;
+export function commandWithWorkingDirectory(command: string, cwd: string | undefined): string {
+  if (!cwd) {
+    return command;
+  }
+  return `cd ${shellQuote(cwd)} && (\n${command}\n)`;
 }
 
 function fingerprintForHostKey(key: Buffer): string {
@@ -195,17 +200,92 @@ function connectConfig(connection: SshConnectionOptions, timeoutMs: number): Con
   };
 }
 
-function appendChunk(
+export interface OutputState {
+  bytes: number;
+  truncated: boolean;
+}
+
+export function appendChunk(
   chunks: Buffer[],
   chunk: Buffer,
-  state: { bytes: number },
+  state: OutputState,
   maxOutputBytes: number,
 ): void {
-  state.bytes += chunk.byteLength;
-  if (state.bytes > maxOutputBytes) {
-    throw new SshExecutionError(`Remote command output exceeded ${maxOutputBytes} bytes.`);
+  if (state.truncated) {
+    return;
   }
-  chunks.push(chunk);
+  const available = maxOutputBytes - state.bytes;
+  if (available <= 0) {
+    state.truncated = true;
+    return;
+  }
+  if (chunk.byteLength > available) {
+    chunks.push(chunk.subarray(0, available));
+    state.bytes += available;
+    state.truncated = true;
+  } else {
+    chunks.push(chunk);
+    state.bytes += chunk.byteLength;
+  }
+}
+
+function connectClient(client: Client, config: ConnectConfig, timeoutMs: number): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      client.destroy();
+      reject(
+        new SshExecutionError(`SSH connection timed out after ${timeoutMs} ms during handshake.`),
+      );
+    }, timeoutMs);
+
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      client.removeListener('ready', onReady);
+      client.removeListener('error', onError);
+      client.removeListener('close', onClose);
+    };
+
+    const onReady = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve();
+    };
+
+    const onError = (error: Error): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      client.destroy();
+      reject(new SshExecutionError(`SSH connection failed: ${error.message}`));
+    };
+
+    const onClose = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      client.destroy();
+      reject(new SshExecutionError('SSH connection closed before handshake completed.'));
+    };
+
+    client.once('ready', onReady);
+    client.once('error', onError);
+    client.once('close', onClose);
+    client.connect(config);
+  });
 }
 
 function execOnClient(
@@ -213,13 +293,14 @@ function execOnClient(
   command: string,
   timeoutMs: number,
   maxOutputBytes: number,
+  stdin?: string,
 ): Promise<ExecuteResult> {
   return new Promise((resolve, reject) => {
     let channel: ClientChannel | undefined;
     let settled = false;
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
-    const outputState = { bytes: 0 };
+    const outputState: OutputState = { bytes: 0, truncated: false };
 
     const finish = (callback: () => void): void => {
       if (settled) {
@@ -232,6 +313,7 @@ function execOnClient(
 
     const timer = setTimeout(() => {
       channel?.close();
+      client.destroy();
       finish(() =>
         reject(new SshExecutionError(`Remote command timed out after ${timeoutMs} ms.`)),
       );
@@ -246,32 +328,36 @@ function execOnClient(
       }
 
       channel = nextChannel;
+
+      if (stdin !== undefined) {
+        channel.write(stdin);
+        channel.end();
+      }
+
       channel.on('data', (chunk: Buffer) => {
-        try {
-          appendChunk(stdout, chunk, outputState, maxOutputBytes);
-        } catch (chunkError) {
-          channel?.close();
-          finish(() => reject(chunkError));
-        }
+        appendChunk(stdout, chunk, outputState, maxOutputBytes);
       });
       channel.stderr.on('data', (chunk: Buffer) => {
-        try {
-          appendChunk(stderr, chunk, outputState, maxOutputBytes);
-        } catch (chunkError) {
-          channel?.close();
-          finish(() => reject(chunkError));
-        }
+        appendChunk(stderr, chunk, outputState, maxOutputBytes);
       });
       channel.once('error', (channelError: Error) => {
         finish(() => reject(new SshExecutionError(`SSH channel error: ${channelError.message}`)));
       });
       channel.once('close', (code: number | null, signal: string | null) => {
+        let stdoutText = Buffer.concat(stdout).toString('utf8');
+        let stderrText = Buffer.concat(stderr).toString('utf8');
+        if (outputState.truncated) {
+          const warning = `\n[Output truncated: combined output reached ${maxOutputBytes} bytes limit]`;
+          stdoutText += warning;
+        }
+
         finish(() =>
           resolve({
-            stdout: Buffer.concat(stdout).toString('utf8'),
-            stderr: Buffer.concat(stderr).toString('utf8'),
+            stdout: stdoutText,
+            stderr: stderrText,
             exitCode: code ?? (signal ? 1 : 0),
             ...(signal ? { signal } : {}),
+            truncated: outputState.truncated,
           }),
         );
       });
@@ -283,29 +369,21 @@ export async function executeSshCommand(options: ExecuteOptions): Promise<Execut
   const client = new Client();
 
   try {
-    await new Promise<void>((resolve, reject) => {
-      const onReady = (): void => {
-        client.removeListener('error', onError);
-        resolve();
-      };
-      const onError = (error: Error): void => {
-        client.removeListener('ready', onReady);
-        reject(new SshExecutionError(`SSH connection failed: ${error.message}`));
-      };
-
-      client.once('ready', onReady);
-      client.once('error', onError);
-      client.connect(connectConfig(options.connection, options.timeoutMs));
-    });
+    await connectClient(
+      client,
+      connectConfig(options.connection, options.timeoutMs),
+      options.timeoutMs,
+    );
 
     return await execOnClient(
       client,
       commandWithWorkingDirectory(options.command, options.cwd),
       options.timeoutMs,
       options.maxOutputBytes,
+      options.stdin,
     );
   } finally {
-    client.end();
+    client.destroy();
   }
 }
 
@@ -315,21 +393,8 @@ export async function testSshConnection(
 ): Promise<void> {
   const client = new Client();
   try {
-    await new Promise<void>((resolve, reject) => {
-      const onReady = (): void => {
-        client.removeListener('error', onError);
-        resolve();
-      };
-      const onError = (error: Error): void => {
-        client.removeListener('ready', onReady);
-        reject(new SshExecutionError(`SSH connection failed: ${error.message}`));
-      };
-
-      client.once('ready', onReady);
-      client.once('error', onError);
-      client.connect(connectConfig(connection, timeoutMs));
-    });
+    await connectClient(client, connectConfig(connection, timeoutMs), timeoutMs);
   } finally {
-    client.end();
+    client.destroy();
   }
 }

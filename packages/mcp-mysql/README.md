@@ -46,11 +46,15 @@ MCP 客户端配置示例：
 
 ## 模式
 
-- `readonly`：默认模式，只允许 `SELECT`、`SHOW`、`DESCRIBE`、`EXPLAIN`。
-- `write`：允许查询、DML 和普通 DDL；仍然拒绝账户管理、服务器管理和多语句。
-- `admin`：允许单条 MySQL 语句，包括 `GRANT`、`REVOKE`、用户管理和数据库管理语句。数据库账号本身必须拥有对应权限。
+- `readonly`：默认模式，只允许只读语句（`SELECT`、`SHOW`、`DESCRIBE`、`EXPLAIN` 以及只读 CTE `WITH ... SELECT`）。底层通过 `START TRANSACTION READ ONLY` 引擎级强制只读。
+- `write`：允许查询、DML（`INSERT`、`UPDATE`、`DELETE`、`REPLACE`）和非破坏性表变更（`CREATE TABLE`、`ALTER TABLE`、`RENAME TABLE`）；严格禁止账户管理、破坏性 DDL（`DROP TABLE/VIEW`、`TRUNCATE`）和多语句。
+- `admin`：允许单条 MySQL 语句，包括破坏性 DDL（`DROP`、`TRUNCATE`）、`GRANT`、`REVOKE`、用户管理和数据库管理语句。数据库账号本身必须拥有对应权限。
 
 不要使用 root 账号作为日常 MCP 账号。MCP 的 SQL 检查只是防御层，真正的安全边界是 MySQL 的最小权限账号。
+
+## 连接与生命周期
+
+采用“按需单连接（用完即关）”设计：每次工具调用时异步建立独立连接，查询执行完毕后立即关闭底层物理 Socket。闲置时对 MySQL 连接占用数为 0，彻底杜绝了因客户端长时间闲置被服务端 `wait_timeout` 超时断开或连接泄漏的问题。
 
 ## 环境变量
 
@@ -65,6 +69,7 @@ MCP 客户端配置示例：
 - `MYSQL_MAX_ROWS`：最大返回行数，默认为 `500`。
 - `MYSQL_MAX_RESULT_BYTES`：最大返回结果字节数，默认为 `1048576`。
 - `MYSQL_QUERY_TIMEOUT_MS`：查询超时时间，默认为 `10000`。
+- `MYSQL_CONNECT_TIMEOUT_MS`：连接超时时间，默认为 `10000`。
 - `MYSQL_MAX_AFFECTED_ROWS`：非 admin 模式单次 DML 最大影响行数，默认为 `1000`。
 
 命令行 `--mode` 优先于 `MYSQL_MODE`。`--allow_admin_query` 不受支持；管理员能力由 `--mode=admin` 唯一控制。
@@ -75,6 +80,6 @@ MCP 客户端配置示例：
 - `mysql_get_server_info`：获取 MySQL 版本、当前用户和当前数据库。
 - `mysql_list_databases`：列出当前账号可见的数据库。
 - `mysql_list_tables`：列出指定数据库的表和视图。
-- `mysql_describe_table`：查看指定表的列定义。
+- `mysql_describe_table`：查看指定表的列定义。`database` 参数可选，默认回退到 `MYSQL_DATABASE`。
 
 结果包含 `schema_version`、语句类型、列、行、影响行数等结构化信息；输出默认限制为 500 行和 1 MiB。
