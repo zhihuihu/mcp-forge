@@ -1,6 +1,6 @@
 {
   "name": "@huzhihui_c/mcp-mysql",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "An AWS-style MCP server for MySQL query and schema operations.",
   "type": "module",
   "exports": "./dist/index.js",
