@@ -13,6 +13,7 @@
 - [`@huzhihui_c/mcp-ssh`](./packages/mcp-ssh)：通过 SSH 在远程主机上执行命令。
 - [`@huzhihui_c/mcp-mysql`](./packages/mcp-mysql)：按 `readonly`、`write`、`admin` 三档模式访问 MySQL。
 - [`@huzhihui_c/mcp-postgres`](./packages/mcp-postgres)：按 `readonly`、`write`、`admin` 三档模式访问 PostgreSQL。
+- [`@huzhihui_c/mcp-api`](./packages/mcp-api)：基于 OpenAPI / Swagger 规范动态探索和调用 REST API。
 
 ## 开发
 

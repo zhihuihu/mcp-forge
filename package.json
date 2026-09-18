@@ -11,6 +11,7 @@
     "build": "pnpm -r --if-present build",
     "clean": "pnpm -r --if-present clean",
     "dev": "pnpm --filter @huzhihui_c/mcp-ssh dev",
+    "dev:api": "pnpm --filter @huzhihui_c/mcp-api dev",
     "dev:mysql": "pnpm --filter @huzhihui_c/mcp-mysql dev",
     "dev:postgres": "pnpm --filter @huzhihui_c/mcp-postgres dev",
     "dev:ssh": "pnpm --filter @huzhihui_c/mcp-ssh dev",
