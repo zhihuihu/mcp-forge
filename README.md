@@ -13,6 +13,9 @@
 - [`@huzhihui_c/mcp-ssh`](./packages/mcp-ssh)：通过 SSH 在远程主机上执行命令。
 - [`@huzhihui_c/mcp-mysql`](./packages/mcp-mysql)：按 `readonly`、`write`、`admin` 三档模式访问 MySQL。
 - [`@huzhihui_c/mcp-postgres`](./packages/mcp-postgres)：按 `readonly`、`write`、`admin` 三档模式访问 PostgreSQL。
+- [`@huzhihui_c/mcp-kingbase`](./packages/mcp-kingbase)：按 `readonly`、`write`、`admin` 三档模式访问人大金仓 (KingbaseES)，自适应识别兼容模式。
+- [`@huzhihui_c/mcp-sqlserver`](./packages/mcp-sqlserver)：按 `readonly`、`write`、`admin` 三档模式访问 Microsoft SQL Server。
+- [`@huzhihui_c/mcp-oracle`](./packages/mcp-oracle)：按 `readonly`、`write`、`admin` 三档模式访问 Oracle Database。
 - [`@huzhihui_c/mcp-api`](./packages/mcp-api)：基于 OpenAPI / Swagger 规范动态探索和调用 REST API。
 
 ## 开发
@@ -42,6 +45,24 @@ pnpm --filter @huzhihui_c/mcp-mysql dev -- --mode=readonly
 pnpm --filter @huzhihui_c/mcp-postgres dev -- --mode=readonly
 ```
 
+只运行 Kingbase MCP：
+
+```bash
+pnpm --filter @huzhihui_c/mcp-kingbase dev -- --mode=readonly
+```
+
+只运行 SQL Server MCP：
+
+```bash
+pnpm --filter @huzhihui_c/mcp-sqlserver dev -- --mode=readonly
+```
+
+只运行 Oracle MCP：
+
+```bash
+pnpm --filter @huzhihui_c/mcp-oracle dev -- --mode=readonly
+```
+
 发布单个 MCP：
 
 ```bash
@@ -53,4 +74,13 @@ pnpm --filter @huzhihui_c/mcp-mysql publish --access public
 
 pnpm --filter @huzhihui_c/mcp-postgres build
 pnpm --filter @huzhihui_c/mcp-postgres publish --access public
+
+pnpm --filter @huzhihui_c/mcp-kingbase build
+pnpm --filter @huzhihui_c/mcp-kingbase publish --access public
+
+pnpm --filter @huzhihui_c/mcp-sqlserver build
+pnpm --filter @huzhihui_c/mcp-sqlserver publish --access public
+
+pnpm --filter @huzhihui_c/mcp-oracle build
+pnpm --filter @huzhihui_c/mcp-oracle publish --access public
 ```
